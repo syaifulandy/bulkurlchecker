@@ -7,6 +7,7 @@
 3. Berikan izin eksekusi pada skrip dengan perintah: chmod +x check_urls.sh.
 4. Jalankan skrip dengan perintah: ./check_urls.sh.
 5. Skrip ini akan menampilkan output yang diharapkan dengan format:
+
     Url;http status;size;lines
    
     https://tes.com;200;4700;100
