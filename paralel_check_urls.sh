@@ -69,7 +69,7 @@ check_url() {
 export -f check_url
 
 # Jalankan secara paralel (10 proses) menggunakan xargs
-grep -v '^\s*$' "$URL_FILE" | xargs -P 10 -I{} bash -c 'check_url "$@"' _ {} "$TMP_OUTPUT"
+grep -v '^\s*$' "$URL_FILE" | xargs -P 30 -I{} bash -c 'check_url "$@"' _ {} "$TMP_OUTPUT"
 
 # Gabungkan hasil sesuai urutan dan simpan
 sort -t ';' -k1,1 "$TMP_OUTPUT" >> "$OUTPUT_FILE"
