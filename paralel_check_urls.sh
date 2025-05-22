@@ -39,7 +39,9 @@ check_url() {
       else
         location_info=""
       fi
-      echo "$url;$protocol;$http_code;$size;$lines;$location_info" | tee -a "$output_ok"
+      echo "$url;$protocol;$http_code;$size;$lines;$location_info"
+      echo "$url;$protocol;$http_code;$size;$lines;$location_info" >> "$output_ok"
+
       return 0
     fi
     return 1
@@ -55,7 +57,7 @@ check_url() {
 export -f check_url
 
 echo "▶️ Scan pertama dimulai..."
-grep -v '^\s*$' "$URL_FILE" | xargs -P 150 -I{} bash -c 'check_url "$@"' _ {} "$TMP_SUCCESS" "$TMP_FAIL"
+grep -v '^\s*$' "$URL_FILE" | xargs -P 150 -I{} bash -c 'check_url "$@"' _ {} "$TMP_SUCCESS" "$TMP_FAIL" | tee -a "$TMP_SUCCESS"
 
 echo "🔁 Scan ulang untuk URL yang gagal..."
 grep -v '^\s*$' "$TMP_FAIL" | xargs -P 50 -I{} bash -c 'check_url "$@"' _ {} "$TMP_SUCCESS" "$TMP_RETRY"
