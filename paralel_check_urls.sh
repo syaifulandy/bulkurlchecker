@@ -57,10 +57,10 @@ check_url() {
 export -f check_url
 
 echo "▶️ Scan pertama dimulai..."
-grep -v '^\s*$' "$URL_FILE" | xargs -P 150 -I{} bash -c 'check_url "$@"' _ {} "$TMP_SUCCESS" "$TMP_FAIL" | tee -a "$TMP_SUCCESS"
+grep -v '^\s*$' "$URL_FILE" | xargs -P 50 -I{} bash -c 'check_url "$@"' _ {} "$TMP_SUCCESS" "$TMP_FAIL" | tee -a "$TMP_SUCCESS"
 
 echo "🔁 Scan ulang untuk URL yang gagal..."
-grep -v '^\s*$' "$TMP_FAIL" | xargs -P 50 -I{} bash -c 'check_url "$@"' _ {} "$TMP_SUCCESS" "$TMP_RETRY"
+grep -v '^\s*$' "$TMP_FAIL" | xargs -P 30 -I{} bash -c 'check_url "$@"' _ {} "$TMP_SUCCESS" "$TMP_RETRY"
 
 sort -t ';' -k1,1 "$TMP_SUCCESS" >> "$OUTPUT_FILE"
 
