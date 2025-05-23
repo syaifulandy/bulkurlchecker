@@ -27,11 +27,11 @@ check_url() {
   do_check() {
     local url="$1"
     local protocol="$2"
-    response=$(curl -k --max-time 2 -s -w "%{http_code} %{size_download} %{redirect_url}" -o /dev/null "$url")
+    response=$(curl -k --max-time 1 -s -w "%{http_code} %{size_download} %{redirect_url}" -o /dev/null "$url")
     http_code=$(echo "$response" | awk '{print $1}')
     size=$(echo "$response" | awk '{print $2}')
     location=$(echo "$response" | cut -d' ' -f3-)
-    lines=$(curl -k --max-time 2 -s "$url" | wc -l)
+    lines=$(curl -k --max-time 1 -s "$url" | wc -l)
 
     if [[ "$http_code" != "000" ]]; then
       if [[ "$http_code" =~ ^3 ]]; then
