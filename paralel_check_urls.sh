@@ -24,37 +24,29 @@ check_url() {
     url_https="$raw_url"
   fi
 
-  do_check() {
-    local url="$1"
-    local protocol="$2"
-    local tmpfile
-    tmpfile=$(mktemp)
+do_check() {
+  local url="$1"
+  local protocol="$2"
+  local tmpfile
+  tmpfile=$(mktemp)
 
-    # Simpan semua output curl (body) ke tmpfile dan ambil info dari stdout dan header
-    read -r http_code size_download redirect_url <<< $(curl -k --max-time 5 -s -L -w "%{http_code} %{size_download} %{redirect_url}" -o "$tmpfile" "$url")
+  read -r http_code size_download redirect_url <<< $(curl -k --max-time 5 -s -L -w "%{http_code} %{size_download} %{redirect_url}" -o "$tmpfile" "$url")
 
-    if [[ "$http_code" != "000" ]]; then
-      # Ambil jumlah baris
-      lines=$(wc -l < "$tmpfile")
+  if [[ "$http_code" != "000" ]]; then
+    lines=$(wc -l < "$tmpfile")
+    title=$(grep -i -o '<title[^>]*>.*</title>' "$tmpfile" | head -n1 | sed -e 's/<title[^>]*>//I' -e 's#</title>##I' | tr -d '\n' | sed 's/;/,/g')
+    [[ -z "$title" ]] && title="-"
+    location=""
+    [[ "$http_code" =~ ^3 ]] && location="$redirect_url"
 
-      # Ambil <title> dari body
-      title=$(grep -i -o '<title[^>]*>.*</title>' "$tmpfile" | head -n1 | sed -e 's/<title[^>]*>//I' -e 's#</title>##I' | tr -d '\n' | sed 's/;/,/g')
-      [[ -z "$title" ]] && title="-"
-
-      # Redirect location jika ada
-      location=""
-      if [[ "$http_code" =~ ^3 ]]; then
-        location="$redirect_url"
-      fi
-
-      echo "$url;$protocol;$http_code;$size_download;$lines;$location;$title" >> "$output_ok"
-      rm -f "$tmpfile"
-      return 0
-    fi
-
+    echo "$url;$protocol;$http_code;$size_download;$lines;$location;$title" | tee -a "$output_ok" >&2
     rm -f "$tmpfile"
-    return 1
-  }
+    return 0
+  fi
+
+  rm -f "$tmpfile"
+  return 1
+}
 
   if do_check "$url_https" "https"; then return; fi
   url_http="${url_https/https:/http:}"
