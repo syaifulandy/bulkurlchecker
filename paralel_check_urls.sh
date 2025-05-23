@@ -11,7 +11,7 @@ if [ ! -f "$URL_FILE" ]; then
   exit 1
 fi
 
-echo "Url;Protocol;HTTP Status;Size;Lines;Location" > "$OUTPUT_FILE"
+echo "Url;Protocol;HTTP Status;Size;Lines;Location;Title" > "$OUTPUT_FILE"
 
 check_url() {
   local raw_url="$1"
@@ -27,23 +27,32 @@ check_url() {
   do_check() {
     local url="$1"
     local protocol="$2"
-    response=$(curl -k --max-time 1 -s -w "%{http_code} %{size_download} %{redirect_url}" -o /dev/null "$url")
-    http_code=$(echo "$response" | awk '{print $1}')
-    size=$(echo "$response" | awk '{print $2}')
-    location=$(echo "$response" | cut -d' ' -f3-)
-    lines=$(curl -k --max-time 1 -s "$url" | wc -l)
+    local tmpfile
+    tmpfile=$(mktemp)
+
+    # Simpan semua output curl (body) ke tmpfile dan ambil info dari stdout dan header
+    read -r http_code size_download redirect_url <<< $(curl -k --max-time 5 -s -L -w "%{http_code} %{size_download} %{redirect_url}" -o "$tmpfile" "$url")
 
     if [[ "$http_code" != "000" ]]; then
-      if [[ "$http_code" =~ ^3 ]]; then
-        location_info="$location"
-      else
-        location_info=""
-      fi
-      echo "$url;$protocol;$http_code;$size;$lines;$location_info"
-      echo "$url;$protocol;$http_code;$size;$lines;$location_info" >> "$output_ok"
+      # Ambil jumlah baris
+      lines=$(wc -l < "$tmpfile")
 
+      # Ambil <title> dari body
+      title=$(grep -i -o '<title[^>]*>.*</title>' "$tmpfile" | head -n1 | sed -e 's/<title[^>]*>//I' -e 's#</title>##I' | tr -d '\n' | sed 's/;/,/g')
+      [[ -z "$title" ]] && title="-"
+
+      # Redirect location jika ada
+      location=""
+      if [[ "$http_code" =~ ^3 ]]; then
+        location="$redirect_url"
+      fi
+
+      echo "$url;$protocol;$http_code;$size_download;$lines;$location;$title" >> "$output_ok"
+      rm -f "$tmpfile"
       return 0
     fi
+
+    rm -f "$tmpfile"
     return 1
   }
 
@@ -57,18 +66,20 @@ check_url() {
 export -f check_url
 
 echo "▶️ Scan pertama dimulai..."
-grep -v '^\s*$' "$URL_FILE" | xargs -P 40 -I{} bash -c 'check_url "$@"' _ {} "$TMP_SUCCESS" "$TMP_FAIL" | tee -a "$TMP_SUCCESS"
+grep -v '^\s*$' "$URL_FILE" | xargs -P 40 -I{} bash -c 'check_url "$@"' _ {} "$TMP_SUCCESS" "$TMP_FAIL"
 
 echo "🔁 Scan ulang untuk URL yang gagal..."
 grep -v '^\s*$' "$TMP_FAIL" | xargs -P 30 -I{} bash -c 'check_url "$@"' _ {} "$TMP_SUCCESS" "$TMP_RETRY"
 
-sort -t ';' -k1,1 "$TMP_SUCCESS" >> "$OUTPUT_FILE"
+# Hapus duplikat
+sort -u "$TMP_SUCCESS" >> "$OUTPUT_FILE"
 
+# Tambahkan URL gagal setelah retry
 if [ -s "$TMP_RETRY" ]; then
   echo "" >> "$OUTPUT_FILE"
   echo "# URL yang tetap gagal setelah retry:" >> "$OUTPUT_FILE"
   while read -r line; do
-    echo "$line;Gagal diakses;;;;" | tee -a "$OUTPUT_FILE"
+    echo "$line;Gagal diakses;;;;;" >> "$OUTPUT_FILE"
   done < "$TMP_RETRY"
 fi
 
