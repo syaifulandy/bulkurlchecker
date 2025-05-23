@@ -30,7 +30,7 @@ do_check() {
   local tmpfile
   tmpfile=$(mktemp)
 
-  read -r http_code size_download redirect_url <<< $(curl -k --max-time 5 -s -L -w "%{http_code} %{size_download} %{redirect_url}" -o "$tmpfile" "$url")
+  read -r http_code size_download redirect_url <<< $(curl -k --max-time 1 -s -L -w "%{http_code} %{size_download} %{redirect_url}" -o "$tmpfile" "$url")
 
   if [[ "$http_code" != "000" ]]; then
     lines=$(wc -l < "$tmpfile")
