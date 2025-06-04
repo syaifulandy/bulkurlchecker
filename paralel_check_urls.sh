@@ -18,39 +18,37 @@ check_url() {
   local output_ok="$2"
   local output_fail="$3"
 
-  if [[ ! "$raw_url" =~ ^https?:// ]]; then
-    url_https="https://$raw_url"
-  else
-    url_https="$raw_url"
-  fi
+  do_check() {
+    local url="$1"
+    local protocol="$2"
+    local tmpfile
+    tmpfile=$(mktemp)
 
-do_check() {
-  local url="$1"
-  local protocol="$2"
-  local tmpfile
-  tmpfile=$(mktemp)
+    read -r http_code size_download redirect_url <<< "$(curl -k --max-time 5 -s -L -w "%{http_code} %{size_download} %{redirect_url}" -o "$tmpfile" "$url")"
 
-  read -r http_code size_download redirect_url <<< $(curl -k --max-time 1 -s -L -w "%{http_code} %{size_download} %{redirect_url}" -o "$tmpfile" "$url")
+    if [[ "$http_code" != "000" ]]; then
+      lines=$(wc -l < "$tmpfile")
+      title=$(grep -i -o '<title[^>]*>.*</title>' "$tmpfile" | head -n1 | sed -e 's/<title[^>]*>//I' -e 's#</title>##I' | tr -d '\n' | sed 's/;/,/g')
+      [[ -z "$title" ]] && title="-"
+      location=""
+      [[ "$http_code" =~ ^3 ]] && location="$redirect_url"
 
-  if [[ "$http_code" != "000" ]]; then
-    lines=$(wc -l < "$tmpfile")
-    title=$(grep -i -o '<title[^>]*>.*</title>' "$tmpfile" | head -n1 | sed -e 's/<title[^>]*>//I' -e 's#</title>##I' | tr -d '\n' | sed 's/;/,/g')
-    [[ -z "$title" ]] && title="-"
-    location=""
-    [[ "$http_code" =~ ^3 ]] && location="$redirect_url"
+      echo "$url;$protocol;$http_code;$size_download;$lines;$location;$title" | tee -a "$output_ok" >&2
+      rm -f "$tmpfile"
+      return 0
+    fi
 
-    echo "$url;$protocol;$http_code;$size_download;$lines;$location;$title" | tee -a "$output_ok" >&2
     rm -f "$tmpfile"
-    return 0
+    return 1
+  }
+
+  if [[ "$raw_url" =~ ^https?:// ]]; then
+    proto=$(echo "$raw_url" | cut -d':' -f1)
+    if do_check "$raw_url" "$proto"; then return; fi
+  else
+    if do_check "https://$raw_url" "https"; then return; fi
+    if do_check "http://$raw_url" "http"; then return; fi
   fi
-
-  rm -f "$tmpfile"
-  return 1
-}
-
-  if do_check "$url_https" "https"; then return; fi
-  url_http="${url_https/https:/http:}"
-  if do_check "$url_http" "http"; then return; fi
 
   echo "$raw_url" >> "$output_fail"
 }
