@@ -7,6 +7,23 @@ TMP_FAIL=$(mktemp)
 TMP_RETRY=$(mktemp)
 TMP_NEWTARGET=$(mktemp)  # Untuk menyimpan URL hasil redirect
 
+RETRY_MODE=false
+
+# Cek argumen
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    -r|--retry)
+      RETRY_MODE=true
+      ;;
+    *)
+      echo "❌ Opsi tidak dikenal: $1"
+      echo "Gunakan: $0 [--retry]"
+      exit 1
+      ;;
+  esac
+  shift
+done
+
 if [ ! -f "$URL_FILE" ]; then
   echo "File $URL_FILE tidak ditemukan!"
   exit 1
@@ -74,8 +91,13 @@ export -f check_url
 echo "▶️ Scan pertama dimulai..."
 grep -v '^\s*$' "$URL_FILE" | sort -u | xargs -P 40 -I{} bash -c 'check_url "$@"' _ {} "$TMP_SUCCESS" "$TMP_FAIL" "$TMP_NEWTARGET"
 
-echo "🔁 Scan ulang untuk URL yang gagal..."
-grep -v '^\s*$' "$TMP_FAIL" | sort -u | xargs -P 30 -I{} bash -c 'check_url "$@"' _ {} "$TMP_SUCCESS" "$TMP_RETRY" "$TMP_NEWTARGET"
+if $RETRY_MODE; then
+  echo "🔁 Scan ulang untuk URL yang gagal..."
+  grep -v '^\s*$' "$TMP_FAIL" | sort -u | xargs -P 30 -I{} bash -c 'check_url "$@"' _ {} "$TMP_SUCCESS" "$TMP_RETRY" "$TMP_NEWTARGET"
+else
+  cp "$TMP_FAIL" "$TMP_RETRY"  # agar tetap tercatat yang gagal
+  echo "⚠️  Retry dinonaktifkan. Lewati scan ulang URL gagal."
+fi
 
 echo "➡️ Scan URL hasil redirect..."
 if [ -s "$TMP_NEWTARGET" ]; then
