@@ -43,6 +43,9 @@ check_url() {
     local protocol="$2"
     local tmpfile=$(mktemp)
     local tmpheader=$(mktemp)
+    # 🔥 BERSIHKAN URL dari spasi, \r, dll
+    raw_url=$(echo "$raw_url" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
 
     # Ambil header + body
     read -r http_code size_download redirect_url <<< "$(curl -k --max-time 5 -s -D "$tmpheader" -w "%{http_code} %{size_download} %{redirect_url}" -o "$tmpfile" "$url")"
