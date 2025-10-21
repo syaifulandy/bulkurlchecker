@@ -48,7 +48,7 @@ check_url() {
 
 
     # Ambil header + body
-    read -r http_code size_download redirect_url <<< "$(curl -k --max-time 2 -s -D "$tmpheader" -w "%{http_code} %{size_download} %{redirect_url}" -o "$tmpfile" "$url")"
+    read -r http_code size_download redirect_url <<< "$(curl -k --max-time 20 -s -D "$tmpheader" -w "%{http_code} %{size_download} %{redirect_url}" -o "$tmpfile" "$url")"
 
     if [[ "$http_code" != "000" ]]; then
       lines=$(wc -l < "$tmpfile")
@@ -96,7 +96,7 @@ grep -v '^\s*$' "$URL_FILE" | sort -u | xargs -P 40 -I{} bash -c 'check_url "$@"
 
 if $RETRY_MODE; then
   echo "🔁 Scan ulang untuk URL yang gagal..."
-  grep -v '^\s*$' "$TMP_FAIL" | sort -u | xargs -P 30 -I{} bash -c 'check_url "$@"' _ {} "$TMP_SUCCESS" "$TMP_RETRY" "$TMP_NEWTARGET"
+  grep -v '^\s*$' "$TMP_FAIL" | sort -u | xargs -P 20 -I{} bash -c 'check_url "$@"' _ {} "$TMP_SUCCESS" "$TMP_RETRY" "$TMP_NEWTARGET"
 else
   cp "$TMP_FAIL" "$TMP_RETRY"  # agar tetap tercatat yang gagal
   echo "⚠️  Retry dinonaktifkan. Lewati scan ulang URL gagal."
