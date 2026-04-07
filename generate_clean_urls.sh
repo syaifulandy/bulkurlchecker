@@ -1,39 +1,30 @@
 #!/bin/bash
 
-input="raw_urls.txt"
-output="clean_urls.txt"
-
-if [ ! -f "$input" ]; then
-    echo "[ERROR] File $input tidak ditemukan"
+# Cek apakah user memasukkan argumen file
+if [ -z "$1" ]; then
+    echo "[ERROR] Penggunaan: $0 <nama_file_input>"
+    echo "Contoh: ./bersihin.sh raw_urls.txt"
     exit 1
 fi
 
-> "$output"
+input="$1"
 
-while IFS= read -r line; do
+# Cek apakah file inputnya beneran ada
+if [ ! -f "$input" ]; then
+    echo "[ERROR] File '$input' tidak ditemukan!"
+    exit 1
+fi
 
-    # hapus spasi depan belakang
-    line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+# Buat nama output dinamis: contoh_file.txt -> clean_contoh_file.txt
+filename=$(basename "$input")
+output="clean_$filename"
 
-    # hapus tanda kutip
-    line=$(echo "$line" | tr -d '"')
+# Proses Ekstraksi (Logic yang sudah oke tadi)
+cat "$input" | \
+    tr ',' '\n' | \
+    grep -oE '(https?://|www\.)[a-zA-Z0-9./?=&\-_%#+:]+|[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}[a-zA-Z0-9./?=&\-_%#+:]*' | \
+    sed 's/[")>]*$//' | \
+    sort -u > "$output"
 
-    # skip kosong
-    [[ -z "$line" ]] && continue
-
-    # hapus teks dalam ()
-    line=$(echo "$line" | sed 's/(.*)//')
-
-    # ambil token pertama
-    url=$(echo "$line" | awk '{print $1}')
-
-    # tambah https jika belum ada
-    if [[ ! "$url" =~ ^https?:// ]]; then
-        url="https://$url"
-    fi
-
-    echo "$url"
-
-done < "$input" | sort -u > "$output"
-
-echo "[+] Clean URL tersimpan di $output"
+echo "[+] Selesai! Input: $input"
+echo "[+] Hasil bersih tersimpan di: $output"
