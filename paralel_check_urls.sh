@@ -1,7 +1,7 @@
 #!/bin/bash
 
 URL_FILE="urls.txt"
-OUTPUT_FILE="hasil_check_urls.txt"
+OUTPUT_FILE="hasil_check_urls.csv"
 
 TMP_SUCCESS=$(mktemp)
 TMP_FAIL=$(mktemp)
