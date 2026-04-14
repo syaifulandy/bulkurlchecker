@@ -62,7 +62,28 @@ echo "Url;Protocol;HTTP;Size;Lines;Redirect;External_Redirect;Title;ServerInfo;I
 # =========================
 resolve_internet_ip() {
   local host="$1"
-  ip=$(dig +short @8.8.8.8 "$host" | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n1)
+  local ip=""
+
+  # Basic validation (hindari injection / input aneh)
+  [[ ! "$host" =~ ^[a-zA-Z0-9.-]+$ ]] && return 1
+
+  ip=$(curl -s \
+    --max-time 5 \                # total timeout
+    --connect-timeout 3 \        # timeout koneksi
+    --retry 2 \                  # retry kalau gagal
+    --retry-delay 1 \
+    --fail \                     # fail kalau HTTP error
+    "https://cloudflare-dns.com/dns-query?name=${host}&type=A" \
+    -H "accept: application/dns-json" \
+    | jq -r '.Answer[].data' 2>/dev/null \
+    | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' \
+    | head -n1)
+
+  # fallback ke DNS biasa kalau DoH gagal
+  if [ -z "$ip" ]; then
+    ip=$(dig +short "$host" 2>/dev/null | head -n1)
+  fi
+
   echo "$ip"
 }
 
