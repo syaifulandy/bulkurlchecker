@@ -119,25 +119,78 @@ check_url() {
     url=$(echo "$url" | tr -d '\r' | xargs)
     host=$(echo "$url" | sed -E 's#https?://##' | cut -d/ -f1)
 
-    curl_extra=""
+    curl_extra=()
+
     if $INTERNET_MODE && [[ "$protocol" == "https" ]]; then
-      resolved_ip=$(resolve_internet_ip "$host")
-      [[ -n "$resolved_ip" ]] && curl_extra="--resolve $host:443:$resolved_ip"
+
+        resolved_ip=$(resolve_internet_ip "$host" | head -n1)
+
+        if echo "$resolved_ip" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; then
+            curl_extra=(--resolve "$host:443:$resolved_ip")
+        fi
     fi
 
-    curl_out=$(curl -4 -k --max-time 20 -s \
-      $curl_extra \
+
+    curl_out=$(curl -4 -k --max-time 15 -s \
+      "${curl_extra[@]}" \
       -D "$tmpheader" \
       -o "$tmpfile" \
       -w "%{http_code}|%{size_download}|%{redirect_url}|%{remote_ip}" \
-      -v "$url" 2> "$tmplog")
+      -v "$url" 2>"$tmplog")
+    curl_exit=$?
+
 
     IFS="|" read -r http_code size_download redirect_url remote_ip <<< "$curl_out"
 
-    if [[ "$http_code" == "000" ]]; then
-      rm -f "$tmpfile" "$tmpheader" "$tmplog"
-      return 1
+    # fallback khusus mode internet
+
+    if $INTERNET_MODE \
+       && [[ "$http_code" == "000" ]] \
+       && [[ "$curl_exit" =~ ^(6|7|28)$ ]]; then
+        # hanya bila tadi pakai --resolve
+        if [[ ${#curl_extra[@]} -gt 0 ]]; then
+
+            echo "FALLBACK_LOCAL_DNS: $url" >> /tmp/url_debug.log
+
+            curl_out=$(curl -4 -k \
+                --connect-timeout 5 \
+                --max-time 15 \
+                -s \
+                -D "$tmpheader" \
+                -o "$tmpfile" \
+                -w "%{http_code}|%{size_download}|%{redirect_url}|%{remote_ip}" \
+                -v "$url" 2>"$tmplog")
+
+            curl_exit=$?
+
+            IFS="|" read -r http_code size_download redirect_url remote_ip <<< "$curl_out"
+
+          if [[ "$http_code" != "000" ]]; then
+            echo "FALLBACK_LOCAL_DNS_SUCCESS: $url => HTTP=$http_code IP=$remote_ip" >> /tmp/url_debug.log
+          fi
+
+        fi
     fi
+    
+    echo "DEBUG: $url => HTTP=$http_code IP=$remote_ip" >> /tmp/url_debug.log
+
+    if [[ "$http_code" == "000" ]]; then
+
+        {
+            echo "=================================="
+            echo "URL=$url"
+            echo "EXIT_CODE=$curl_exit"
+            cat "$tmplog"
+            echo
+        } >> /tmp/http000.log
+
+        rm -f "$tmpfile" "$tmpheader" "$tmplog"
+        return 1
+    fi
+
+
+    echo "DEBUG SUCCESS: $url" >> /tmp/url_debug.log
+
 
     lines=$(wc -l < "$tmpfile")
 
@@ -214,8 +267,11 @@ check_url() {
     # =========================
     # OUTPUT (WITH External_Redirect)
     # =========================
-    echo "$url;$protocol;$http_code;$size_download;$lines;$location;$is_external;$title;$server_info;$remote_ip;$ssl_expire;$ssl_status;$days_left;$subject_cn;$issuer_cn;$tls_version;$cipher" \
-      | tee -a "$output_ok" >&2
+    
+    result="$url;$protocol;$http_code;$size_download;$lines;$location;$is_external;$title;$server_info;$remote_ip;$ssl_expire;$ssl_status;$days_left;$subject_cn;$issuer_cn;$tls_version;$cipher"
+
+    echo "$result" >> "$output_ok"
+    echo "$result" >&2
 
     if [[ "$http_code" =~ ^3 ]] && [[ -n "$redirect_url" ]]; then
       echo "$redirect_url" >> "$output_new"
@@ -225,14 +281,30 @@ check_url() {
     return 0
   }
 
-  if [[ "$raw_url" =~ ^https?:// ]]; then
-    proto=$(echo "$raw_url" | cut -d':' -f1)
-    if do_check "$raw_url" "$proto"; then return; fi
+
+  if [[ "$raw_url" =~ ^https:// ]]; then
+
+      do_check "$raw_url" "https" && return
+
+  elif [[ "$raw_url" =~ ^http:// ]]; then
+
+      do_check "$raw_url" "http" && return
+
+      https_url="${raw_url/http:\/\//https://}"
+
+      do_check "$https_url" "https" && return
+
   else
-    if do_check "https://$raw_url" "https"; then return; fi
-    if do_check "http://$raw_url" "http"; then return; fi
+
+      do_check "https://$raw_url" "https" && return
+
+      do_check "http://$raw_url" "http" && return
+
   fi
+
+  echo "MASUK FAIL: $raw_url" >> /tmp/url_debug.log
   echo "$raw_url" >> "$output_fail"
+
 }
 
 export -f check_url
@@ -243,8 +315,19 @@ export -f get_domain
 export INTERNET_MODE
 
 # Execution Logic (First Scan, Retry, Redirect Scan) tetap sama...
+
+: > /tmp/http000.log
+: > /tmp/url_debug.log
 echo "▶️ Scan pertama dimulai..."
 grep -v '^\s*$' "$URL_FILE" | sort -u | xargs -P 40 -I{} bash -c 'check_url "$@"' _ {} "$TMP_SUCCESS" "$TMP_FAIL" "$TMP_NEWTARGET"
+
+echo "===== TMP_SUCCESS ====="
+wc -l "$TMP_SUCCESS"
+head "$TMP_SUCCESS"
+
+echo "===== TMP_FAIL ====="
+wc -l "$TMP_FAIL"
+head "$TMP_FAIL"
 
 if $RETRY_MODE; then
   echo "🔁 Retry URL gagal..."
