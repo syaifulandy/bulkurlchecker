@@ -112,6 +112,31 @@ clean_field() {
 }
 
 ############################################
+# IP TYPE
+############################################
+
+split_ip() {
+
+    local ip="$1"
+
+    if [[ -z "$ip" || "$ip" == "N/A" ]]; then
+        echo "-|-"
+        return
+    fi
+
+    # RFC1918
+    if [[ "$ip" =~ ^10\. ]] || \
+       [[ "$ip" =~ ^192\.168\. ]] || \
+       [[ "$ip" =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\. ]] || \
+       [[ "$ip" =~ ^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\. ]]; then
+
+        echo "-|$ip"
+    else
+        echo "$ip|-"
+    fi
+}
+
+############################################
 # URL NORMALIZATION
 ############################################
 
@@ -210,12 +235,13 @@ process_url() {
     
     [[ -z "$status_code" ]] && status_code="000"
     [[ -z "$ip" ]] && ip="N/A"
+    IFS='|' read -r ip_internet ip_intranet <<< "$(split_ip "$ip")"
     [[ -z "$server" ]] && server="N/A"
     [[ -z "$x_powered_by" ]] && x_powered_by="N/A"
     [[ -z "$php_version" ]] && php_version="N/A"
 
-    echo "\"$url\",\"$ip\",\"$status_code\",\"$server\",\"$x_powered_by\",\"$php_version\"" \
-        > "$CSV_DIR/${hash}.csv"
+    echo "\"$url\",\"$ip_internet\",\"$ip_intranet\",\"$status_code\",\"$server\",\"$x_powered_by\",\"$php_version\"" \
+    > "$CSV_DIR/${hash}.csv"
 
     if [[ "$status_code" == "000" ]]; then
         echo "$raw_url" > "$FAILED_DIR/${hash}.txt"
@@ -229,6 +255,7 @@ process_url() {
 
 export -f resolve_ip
 export -f clean_field
+export -f split_ip
 export -f normalize_url
 export -f process_url
 
@@ -276,7 +303,7 @@ done
 # BUILD OUTPUT
 ############################################
 
-echo "url,ip,status_code,server,x_powered_by,php_version" > "$OUTPUT"
+echo "url,ip_internet,ip_intranet,status_code,server,x_powered_by,php_version" > "$OUTPUT"
 
 find "$CSV_DIR" -name "*.csv" -type f \
 | sort \
