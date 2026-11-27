@@ -136,6 +136,19 @@ split_ip() {
     fi
 }
 
+
+check_ssl() {
+
+    local host="$1"
+
+    timeout 10 openssl s_client \
+        -servername "$host" \
+        -connect "${host}:443" \
+        </dev/null 2>/dev/null \
+        | openssl x509 -noout -enddate 2>/dev/null \
+        | cut -d= -f2
+}
+
 ############################################
 # URL NORMALIZATION
 ############################################
@@ -196,9 +209,57 @@ process_url() {
 
     ip=$(resolve_ip "$host")
 
-    response=$(curl -ksI \
+    page_info=$(curl -ksL \
+    --connect-timeout 5 \
+    --max-time 20 \
+        --max-redirs 5 \
+        -w "\nFINALURL:%{url_effective}\nREDIRECTS:%{num_redirects}" \
+        "$url" 2>/dev/null)
+
+    final_url=$(echo "$page_info" \
+        | sed -n 's/^FINALURL://p')
+
+    redirect_count=$(echo "$page_info" \
+        | sed -n 's/^REDIRECTS://p')
+
+    title=$(echo "$page_info" \
+        | head -c 16384 \
+        | grep -oim1 '<title[^>]*>.*</title>' \
+        | sed -E 's#<title[^>]*>(.*)</title>#\1#I')
+
+    ssl_status="HTTP_ONLY"
+    ssl_days="N/A"
+
+    if curl -ksI \
+        --connect-timeout 5 \
+        --max-time 10 \
+        "https://$host" >/dev/null 2>&1; then
+
+        expiry=$(check_ssl "$host")
+
+        if [[ -n "$expiry" ]]; then
+
+            expiry_epoch=$(date -d "$expiry" +%s 2>/dev/null)
+            now_epoch=$(date +%s)
+
+            diff_days=$(( (expiry_epoch - now_epoch) / 86400 ))
+
+            if (( diff_days < 0 )); then
+                ssl_status="EXPIRED"
+                ssl_days="$diff_days"
+            else
+                ssl_status="OK"
+                ssl_days="$diff_days"
+            fi
+        else
+            ssl_status="SSL_ERROR"
+        fi
+    fi
+
+    response=$(curl -ksIL \
         --connect-timeout 5 \
         --max-time 15 \
+        --max-redirs 5 \
         -w "\nHTTPSTATUS:%{http_code}" \
         "$url" 2>/dev/null)
 
@@ -218,29 +279,48 @@ process_url() {
     | sed 's/^[Xx]-[Pp]owered-[Bb]y:[[:space:]]*//' \
     | tr -d '\r')
 
+    content_length=$(echo "$headers" \
+    | grep -im1 '^content-length:' \
+    | awk '{print $2}' \
+    | tr -d '\r')
+
     php_version=$(echo "$x_powered_by" \
     | grep -oE 'PHP/[0-9.]+' \
     | head -n1 \
     | cut -d/ -f2 \
     | tr -d '\r')
 
-
     server=$(clean_field "$server")
     x_powered_by=$(clean_field "$x_powered_by")
     php_version=$(clean_field "$php_version")
+    title=$(clean_field "$title")
+    final_url=$(clean_field "$final_url")
+    content_length=$(clean_field "$content_length")
+
 
     server=${server//\"/\"\"}
     x_powered_by=${x_powered_by//\"/\"\"}
     php_version=${php_version//\"/\"\"}
+    title=${title//\"/\"\"}
+    final_url=${final_url//\"/\"\"}
+    content_length=${content_length//\"/\"\"}
+    ssl_status=${ssl_status//\"/\"\"}
+    ssl_days=${ssl_days//\"/\"\"}
+
     
     [[ -z "$status_code" ]] && status_code="000"
     [[ -z "$ip" ]] && ip="N/A"
     IFS='|' read -r ip_internet ip_intranet <<< "$(split_ip "$ip")"
+
     [[ -z "$server" ]] && server="N/A"
     [[ -z "$x_powered_by" ]] && x_powered_by="N/A"
     [[ -z "$php_version" ]] && php_version="N/A"
+    [[ -z "$title" ]] && title="N/A"
+    [[ -z "$final_url" ]] && final_url="$url"
+    [[ -z "$redirect_count" ]] && redirect_count="0"
+    [[ -z "$content_length" ]] && content_length="N/A"
 
-    echo "\"$url\",\"$ip_internet\",\"$ip_intranet\",\"$status_code\",\"$server\",\"$x_powered_by\",\"$php_version\"" \
+    echo "\"$url\",\"$final_url\",\"$redirect_count\",\"$title\",\"$ip_internet\",\"$ip_intranet\",\"$status_code\",\"$content_length\",\"$server\",\"$x_powered_by\",\"$php_version\",\"$ssl_status\",\"$ssl_days\"" \
     > "$CSV_DIR/${hash}.csv"
 
     if [[ "$status_code" == "000" ]]; then
@@ -256,6 +336,7 @@ process_url() {
 export -f resolve_ip
 export -f clean_field
 export -f split_ip
+export -f check_ssl
 export -f normalize_url
 export -f process_url
 
@@ -302,8 +383,7 @@ done
 ############################################
 # BUILD OUTPUT
 ############################################
-
-echo "url,ip_internet,ip_intranet,status_code,server,x_powered_by,php_version" > "$OUTPUT"
+echo "url,final_url,redirect_count,title,ip_internet,ip_intranet,status_code,content_length,server,x_powered_by,php_version,ssl_status,ssl_days_remaining" > "$OUTPUT"
 
 find "$CSV_DIR" -name "*.csv" -type f \
 | sort \
